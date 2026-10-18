@@ -3,7 +3,7 @@
 
 
 namespace Physics {
-    constexpr double dt = 1e-2;
+    constexpr double dt = 1e-3;
     constexpr double e = 1.602e-19;
     constexpr double g = 9.80665;
     constexpr double G = 6.674e-11;
@@ -18,6 +18,7 @@ class Vec2 {
         Vec2(double x, double y) : x(x), y(y) {}
 
         double norm() const { return sqrt(x*x + y*y); }
+        Vec2 normal() const { return Vec2(-y, x); }
 
         Vec2 unit() const { 
             double mag = norm();
@@ -28,6 +29,8 @@ class Vec2 {
 
             return Vec2(x/mag, y/mag);
         }   
+
+        double dot(Vec2& other) const { return x*other.x + y*other.y; }
 
         // Vec-vec operators
         Vec2 operator+(const Vec2& other) const { return Vec2(x + other.x, y + other.y); }
@@ -48,11 +51,18 @@ class Vec2 {
 
         // Unary operators
         Vec2 operator-() const { return Vec2(-x, -y); }
+
+        Vec2 reflect(Vec2& other) const;
 };
 
 // Additional vector operators
 inline Vec2 operator*(double s, const Vec2& vec) { return Vec2(s*vec.x, s*vec.y); }
 inline Vec2 operator/(double s, const Vec2& vec) { return Vec2(vec.x/s, vec.y/s); }
+
+Vec2 Vec2::reflect(Vec2& other) const {
+    Vec2 proj = (Vec2::dot(other)/(other.norm()*other.norm()))*other;
+    return 2*proj - *this;
+}
 
 
 class Rect {
@@ -89,4 +99,3 @@ class Rect {
         double ymin() const { return ymin_; }
         double ymax() const { return ymax_; }
 };
-

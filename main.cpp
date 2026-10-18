@@ -40,6 +40,7 @@ class Part {
 
         Vec2 pos() const { return pos_; }
         Rect rect() const { return rect_; }
+        double r() const { return r_; }
 
         void printInfo() const { 
             std::cout << "=====[Particle " << id << "]=====\nMass: " << mass << "\n";
@@ -91,10 +92,62 @@ class Damp : public Force {
 };
 
 
+struct CollisionResult {
+    std::pair<Part*, Part*> pair;
+    bool colliding;
+    Vec2 collisionPoint;
+    Vec2 sepDir;
+    double depth;
+
+    CollisionResult(std::pair<Part*, Part*> pair, bool colliding = false, Vec2 collisionPoint = Vec2(0,0), Vec2 sepDir = Vec2(0,0), double depth = 0) : pair(pair), colliding(colliding), collisionPoint(collisionPoint), sepDir(sepDir), depth(depth) {}
+};
+
+
 class Collision {
-    public: 
+    public:
         Collision() {}
 
+        // Global collision
+        void resolveCollision(std::vector<Part>& members) {
+            // Broad phase collision
+            auto [partXmin, partXmax] = std::minmax_element(members.begin(), members.end(), 
+                                                    [] (const auto& a, const auto& b) {
+                                                        return a.pos().x < b.pos().x;
+                                                    });
+
+            auto [partYmin, partYmax] = std::minmax_element(members.begin(), members.end(), 
+                                                    [] (const auto& a, const auto& b) {
+                                                        return a.pos().y < b.pos().y;
+                                                    });
+
+            double xmin = std::floor(partXmin->rect().xmin()), xmax = std::floor(partXmax->rect().xmax());
+            double ymin = std::floor(partYmin->rect().ymin()), ymax = std::floor(partYmax->rect().ymax());
+            int m = xmax - xmin;
+            int n = ymax - ymin;
+
+            auto pairs = USGCollision(members, xmin, xmax, ymin, ymax, m, n);
+
+            // Narrow phase collision
+            auto collisions = circCollision(pairs);
+
+            // Resolve collision, update velocities
+            for (auto& collision : collisions) {
+                Vec2 u1 = collision.pair.first->vel;
+                Vec2 u2 = collision.pair.second->vel;
+                double m1 = collision.pair.first->mass;
+                double m2 = collision.pair.second->mass;
+                Vec2 n = collision.sepDir.normal();
+
+                Vec2 v1 = u1 - 2*m2/(m1+m2)*((u1-u2).dot(n))*n;
+                Vec2 v2 = u2 + 2*m1/(m1+m2)*((u1-u2).dot(n))*n;
+
+                collision.pair.first->vel = v2;
+                collision.pair.second->vel = v1;
+            }
+        }
+
+    private:
+        // Broad Phase Collision
         std::vector<std::pair<Part*, Part*>> USGCollision(std::vector<Part>& members, double xmin, double xmax, double ymin, double ymax, int m, int n) const {
             std::vector<std::pair<Part*, std::pair<int,int>>> partCells;
 
@@ -105,9 +158,6 @@ class Collision {
                 int nmin = static_cast<int>((member.rect().ymin() - ymin)*m/(ymax-ymin));
                 int mmax = static_cast<int>(std::ceil((member.rect().xmax() - xmin)*m/(xmax-xmin)));
                 int nmax = static_cast<int>(std::ceil((member.rect().ymax() - ymin)*m/(ymax-ymin)));
-                // std::cout << "For particle with id " << member.id << ": \n";
-                // std::cout << "mmin: " << mmin <<" mmax: " << mmax << '\n';
-                // std::cout << "nmin: " << nmin <<" nmax: " << nmax << '\n';
 
                 // Store each cell covered by particle bounding box
                 for (int i = mmin; i < mmax+1; i++) {
@@ -120,10 +170,6 @@ class Collision {
             // Sort by cell indices (adjacent cells together)
             std::sort(partCells.begin(), partCells.end(), 
                       [] (const auto& a, const auto& b) { return a.second < b.second; });
-
-            // for (auto& cells : partCells) {
-            //     std::cout << "Member with id: " << cells.first->id << " is in cell: " << cells.second.first << " " << cells.second.second << '\n';
-            // }
             
             // Group particles of same cell into vectors, store in outside vector
             std::vector<std::vector<Part*>> partsGrouped;
@@ -141,14 +187,6 @@ class Collision {
                     firstPart = true;
                 }
             }
-
-            // for (auto& group : partsGrouped) {
-            //     std::cout << "This group contains particles with id: \n";
-            //     for (auto& member : group) {
-            //         std::cout << member->id << ", ";
-            //     }
-            //     std::cout << "\n";
-            // }
 
             // Generate pairs of particles per group
             std::vector<std::pair<Part*, Part*>> partsPaired;
@@ -185,17 +223,40 @@ class Collision {
             return partsPaired;
         }
 
-        std::vector<std::pair<Part*, Part*>> 
+        // Narrow Phase Collision
+        std::vector<CollisionResult> circCollision(std::vector<std::pair<Part*, Part*>>& pairs) const {
+            std::vector<CollisionResult> result;
+
+            for (auto& pair : pairs) {
+                double d = sqrt(pow(pair.first->pos().x - pair.second->pos().x, 2) + pow(pair.first->pos().y + pair.second->pos().y, 2));
+
+                if (d < pair.first->r() + pair.second->r()) {
+                    Vec2 collisionPoint = (pair.second->pos() - pair.first->pos())/2 + pair.first->pos();
+                    double depth = pair.first->r() + pair.second->r() - d;
+                    Vec2 sepDir = (pair.second->pos() - pair.first->pos()).unit();
+
+                    result.push_back(CollisionResult(pair, true, collisionPoint, sepDir, depth));
+                }
+            }
+            
+
+            return result;
+        }
+
+        std::vector<CollisionResult> SATCollision(std::vector<std::pair<Part*, Part*>>& pairs) const {
+            
+        }
+
 };
 
 
 class World { 
     private:
-        std::vector<Part> members;
-        std::vector<std::unique_ptr<Force>> forces;
 
     public: 
         double t;
+        std::vector<Part> members;
+        std::vector<std::unique_ptr<Force>> forces;
 
         World() {}
 
@@ -210,6 +271,7 @@ class World {
                 }
                 member.vel += member.acc*dt;
                 member.setPos(member.pos() + member.vel*dt);
+                t += dt;
             }
         }
 
@@ -222,24 +284,38 @@ class World {
                 }
             }
         }
+
+        void renderOut(std::vector<int> ids) {
+            for (auto& id : ids) {
+                for (auto& member : members) {
+                    if (member.id == id) {
+                        std::cout << t << ',' << id << ',' << member.pos().x << ',' << member.pos().y << ',' << member.r() << '\n';
+                    }
+                }
+            }
+        }
 };
 
 
 int main() {
+    World world;
     Collision c;
+    Part part1(1, 1, Vec2(-5, 0), Vec2(4, 0), Vec2(0, 0), 1);
+    Part part2(1, 1, Vec2(5, 0), Vec2(-4, 0), Vec2(0, 0), 2);
+    Part part3(1, 1, Vec2(0, 5), Vec2(0, -4), Vec2(0, 0), 3);
+    Part part4(1, 1, Vec2(0, -5), Vec2(0, 4), Vec2(0, 0), 4);
+    world.addMember(part1);
+    world.addMember(part2);
+    world.addMember(part3);
+    world.addMember(part4);
 
-    Part part1(1, 1, Vec2(0, -1), Vec2(0, 0), Vec2(0, 0), 1);
-    Part part2(1, 1, Vec2(0.5, -1), Vec2(0, 0), Vec2(0, 0), 2);
-    Part part3(1, 1, Vec2(0, 0), Vec2(0, 0), Vec2(0, 0), 3);
-    Part part4(1, 1, Vec2(0.5, 2), Vec2(0, 0), Vec2(0, 0), 4);
-
-    std::vector<Part> members{part1, part2, part3, part4};
-    std::vector<std::pair<Part*, Part*>> pairs = c.USGCollision(members, -3, 3, -3, 3, 6, 6);
-
-    for (auto& pair : pairs) {
-        std::cout << pair.first->id << ' ' << pair.second->id << '\n';
+    for (double t; t < 5; t += Physics::dt) {
+        c.resolveCollision(world.members);
+        world.update(Physics::dt);
+        world.renderOut(std::vector{1, 2, 3, 4});
     }
-    
+
+
     // Part part1(1, 1, Vec2(0, 5), Vec2(0, 0), Vec2(0, 0), 1);
     // Part part2(1, 1, Vec2(0, 0), Vec2(3, 3), Vec2(0, 0), 2);
 
