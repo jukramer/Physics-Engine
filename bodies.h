@@ -1,6 +1,6 @@
 #pragma once
 #include <iostream>
-#include "mathobjs.h"
+#include "common.h"
 
 class Part {
     private:
