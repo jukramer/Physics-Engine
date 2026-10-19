@@ -48,7 +48,7 @@ struct Vec2 {
 // Additional vector operators
 inline Vec2 operator*(double s, const Vec2& vec) { return Vec2(s*vec.x, s*vec.y); }
 
-Vec2 Vec2::reflect(const Vec2& other) const {
+inline Vec2 Vec2::reflect(const Vec2& other) const {
     Vec2 proj = (Vec2::dot(other)/(other.norm()*other.norm()))*other;
     return 2*proj - *this;
 }

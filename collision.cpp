@@ -1,6 +1,5 @@
 #include "collision.h"
 
-
 void Collision::resolveCollision(std::vector<Part>& members) const {
     // Broad phase collision
     auto [partXmin, partXmax] = std::minmax_element(members.begin(), members.end(), 

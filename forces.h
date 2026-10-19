@@ -1,5 +1,6 @@
 #pragma once
 #include "bodies.h"
+#include "common.h"
 #include "mathobjs.h"
 
 class Force {
