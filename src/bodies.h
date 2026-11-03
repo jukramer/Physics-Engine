@@ -1,8 +1,12 @@
 #pragma once
 #include <iostream>
 #include <memory>
-#include "collision.h"
 #include "common.h"
+
+
+class Collider;
+class RectCollider;
+class PartCollider;
 
 
 enum class BodyType {
@@ -34,9 +38,7 @@ class Part : public Body {
         std::vector<std::unique_ptr<Collider>> collider_;
 
     public: 
-        Part(double mass, double r, const Vec2& pos, const Vec2& vel, const Vec2& acc, int id = std::rand()) : Body(pos, vel, acc, BodyType::Particle, id), mass_(mass), r_(r) {
-            collider_.push_back(std::make_unique<PartCollider>(pos, 2*r, 2*r));
-        }
+        Part(double mass, double r, const Vec2& pos, const Vec2& vel, const Vec2& acc, const int id);
 
         double mass() const { return mass_; }
         double r() const { return r_; }
