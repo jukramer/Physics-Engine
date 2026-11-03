@@ -2,10 +2,27 @@
 #include "bodies.h"
 #include "common.h"
 
+enum ForceType {
+    Gravity,
+    Spring,
+    Damp,
+    Electromagnetic,
+    Drag
+};
+
+
+struct ForceDef {
+    ForceType type;
+};
+
+
 class Force {
+    protected:
+        ForceType type_;
     public: 
         virtual void apply(Part& part) = 0;
         virtual ~Force() = default;
+        ForceType type() const { return type_; }
 };
 
 

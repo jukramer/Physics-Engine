@@ -1,70 +1,68 @@
+#include <algorithm>
 #include "collision.h"
 
-void Collision::resolveCollision(std::vector<Part>& members) const {
+
+void Collision::resolveCollision(std::vector<Body>& members) const {
+    // Unpack colliders
+    std::vector<Collider> colliders;
+    for (auto& member : members) {
+        for (auto& collider : member.colliders()) {
+            colliders.push_back(*collider);
+        }
+    }
+
     // Broad phase collision
-    auto [partXmin, partXmax] = std::minmax_element(members.begin(), members.end(), 
+    auto [partXmin, partXmax] = std::minmax_element(colliders.begin(), colliders.end(), 
                                             [] (const auto& a, const auto& b) {
                                                 return a.pos.x < b.pos.x;
                                             });
 
-    auto [partYmin, partYmax] = std::minmax_element(members.begin(), members.end(), 
+    auto [partYmin, partYmax] = std::minmax_element(colliders.begin(), colliders.end(), 
                                             [] (const auto& a, const auto& b) {
                                                 return a.pos.y < b.pos.y;
                                             });
 
-    double xmin = std::floor(partXmin->rect().xmin()), xmax = std::floor(partXmax->rect().xmax());
-    double ymin = std::floor(partYmin->rect().ymin()), ymax = std::floor(partYmax->rect().ymax());
+    double xmin = std::floor(partXmin->xmin()), xmax = std::floor(partXmax->xmax());
+    double ymin = std::floor(partYmin->ymin()), ymax = std::floor(partYmax->ymax());
     int m = xmax - xmin;
     int n = ymax - ymin;
 
-    auto pairs = Collision::USGCollision(members, xmin, xmax, ymin, ymax, m, n);
+    auto pairs = Collision::USGCollision(colliders, xmin, xmax, ymin, ymax, m, n);
 
-    // Narrow phase collision
-    auto collisions = Collision::circCollision(pairs);
+    // TODO: Logic for different collider types
+    // Narrow phase collision 
 
+    // TODO: move to separate function
     // Resolve collision, update velocities
-    for (auto& collision : collisions) {
-        Vec2 u1 = collision.pair.first->vel;
-        Vec2 u2 = collision.pair.second->vel;
-        double m1 = collision.pair.first->mass();
-        double m2 = collision.pair.second->mass();
-        Vec2 n = collision.sepDir.normal();
-
-        Vec2 v1 = u1 - 2*m2/(m1+m2)*((u1-u2).dot(n))*n;
-        Vec2 v2 = u2 + 2*m1/(m1+m2)*((u1-u2).dot(n))*n;
-
-        collision.pair.first->vel = v2;
-        collision.pair.second->vel = v1;
-    }
 }
 
 
-std::vector<std::pair<Part*, Part*>> Collision::USGCollision(std::vector<Part>& members, double xmin, double xmax, double ymin, double ymax, int m, int n) const {
-    std::vector<std::pair<Part*, std::pair<int,int>>> partCells;
+std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector<Collider>& colliders, double xmin, double xmax, double ymin, double ymax, int m, int n) const {
+    std::vector<std::pair<Collider*, std::pair<int,int>>> partCells;
+    partCells.reserve(colliders.size());
 
     // Find cells covered by each particle
-    for (auto& member : members) {
+    for (auto& collider : colliders) {
         // Min and max cell indices covered by particle bounding box
-        int mmin = static_cast<int>((member.rect().xmin() - xmin)*m/(xmax-xmin));
-        int nmin = static_cast<int>((member.rect().ymin() - ymin)*m/(ymax-ymin));
-        int mmax = static_cast<int>(std::ceil((member.rect().xmax() - xmin)*m/(xmax-xmin)));
-        int nmax = static_cast<int>(std::ceil((member.rect().ymax() - ymin)*m/(ymax-ymin)));
+        int mmin = static_cast<int>((collider.xmin() - xmin)*m/(xmax-xmin));
+        int nmin = static_cast<int>((collider.ymin() - ymin)*m/(ymax-ymin));
+        int mmax = static_cast<int>(std::ceil((collider.xmax() - xmin)*m/(xmax-xmin)));
+        int nmax = static_cast<int>(std::ceil((collider.ymax() - ymin)*m/(ymax-ymin)));
 
         // Store each cell covered by particle bounding box
         for (int i = mmin; i < mmax+1; i++) {
             for (int j = nmin; j < nmax+1; j++) {
-                partCells.push_back(std::make_pair(&member, std::make_pair(i, j)));
+                partCells.push_back(std::make_pair(&collider, std::make_pair(i, j)));
             }
         }
     }
 
     // Sort by cell indices (adjacent cells together)
-    std::sort(partCells.begin(), partCells.end(), 
-                [] (const auto& a, const auto& b) { return a.second < b.second; });
+    std::sort(partCells.begin(), partCells.end(), [] (const auto& a, const auto& b) { return a.second < b.second; });
     
     // Group particles of same cell into vectors, store in outside vector
-    std::vector<std::vector<Part*>> partsGrouped;
-    std::vector<Part*> group;
+    std::vector<std::vector<Collider*>> partsGrouped;
+    std::vector<Collider*> group;
     bool firstPart = true; // prevent groups of only 1 particle
 
     for (int i=0; i < partCells.size()-1; i++) {
@@ -80,20 +78,20 @@ std::vector<std::pair<Part*, Part*>> Collision::USGCollision(std::vector<Part>& 
     }
 
     // Generate pairs of particles per group
-    std::vector<std::pair<Part*, Part*>> partsPaired;
+    std::vector<std::pair<Collider*, Collider*>> partsPaired;
     
     for (auto& group : partsGrouped) {
         std::vector<bool> mask(group.size());
         fill(mask.begin(), mask.begin() + 2, true);
         do {
-            std::vector<Part*> pairVec;
+            std::vector<Collider*> pairVec;
             for (int i=0; i<mask.size(); i++) {
                 if (mask[i]) {
                     pairVec.push_back(group[i]);
                 }
             } 
             sort(pairVec.begin(), pairVec.end(), [] (const auto& a, const auto& b) { return a->id < b->id; });
-            std::pair<Part*, Part*> pair(pairVec[0], pairVec[1]);
+            std::pair<Collider*, Collider*> pair(pairVec[0], pairVec[1]);
             partsPaired.push_back(pair);
         } while (std::next_permutation(mask.begin(), mask.end()));
     }
@@ -115,13 +113,13 @@ std::vector<std::pair<Part*, Part*>> Collision::USGCollision(std::vector<Part>& 
 }
 
 
-std::vector<CollisionResult> Collision::circCollision(std::vector<std::pair<Part*, Part*>>& pairs) const {
+std::vector<CollisionResult> Collision::circCollision(std::vector<std::pair<PartCollider*, PartCollider*>>& pairs) const {
     std::vector<CollisionResult> result;
 
     for (auto& pair : pairs) {
-        double d = sqrt(pow(pair.first->pos.x - pair.second->pos.x, 2) + pow(pair.first->pos.y + pair.second->pos.y, 2));
+        double d = sqrt(pow(pair.first->pos.x - pair.second->pos.x, 2) + pow(pair.first->pos.y - pair.second->pos.y, 2));
 
-        if (d < pair.first->r() + pair.second->r()) {
+        if (d < pair.first->r() + pair.second.owner()->r()) {
             Vec2 collisionPoint = (pair.second->pos - pair.first->pos)/2 + pair.first->pos;
             double depth = pair.first->r() + pair.second->r() - d;
             Vec2 sepDir = (pair.second->pos - pair.first->pos).unit();
@@ -131,4 +129,9 @@ std::vector<CollisionResult> Collision::circCollision(std::vector<std::pair<Part
     }
 
     return result;
+}
+
+
+void Collision::updateMembers(std::vector<CollisionResult>& collisions) {
+
 }
