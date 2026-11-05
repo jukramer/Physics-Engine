@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <limits>
 #include "collision.h"
 
 
@@ -22,10 +23,10 @@ void Collision::resolveCollision(const std::vector<Body>& members) const {
                                                 return a->pos.y < b->pos.y;
                                             });
 
-    double xmin = std::floor((*partXmin)->xmin()), xmax = std::floor((*partXmax)->xmax());
-    double ymin = std::floor((*partYmin)->ymin()), ymax = std::floor((*partYmax)->ymax());
-    int m = xmax - xmin;
-    int n = ymax - ymin;
+    const double xmin = std::floor((*partXmin)->xmin()), xmax = std::floor((*partXmax)->xmax());
+    const double ymin = std::floor((*partYmin)->ymin()), ymax = std::floor((*partYmax)->ymax());
+    const int m = xmax - xmin;
+    const int n = ymax - ymin;
 
     auto pairs = Collision::USGCollision(colliders, xmin, xmax, ymin, ymax, m, n);
 
@@ -36,7 +37,6 @@ void Collision::resolveCollision(const std::vector<Body>& members) const {
     // Resolve collision, update velocities
 }
 
-
 std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector<Collider*>& colliders, double xmin, double xmax, double ymin, double ymax, int m, int n) const {
     std::vector<std::pair<Collider*, std::pair<int,int>>> partCells;
     partCells.reserve(colliders.size());
@@ -44,10 +44,10 @@ std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector
     // Find cells covered by each particle
     for (auto& collider : colliders) {
         // Min and max cell indices covered by particle bounding box
-        int mmin = static_cast<int>((collider->xmin() - xmin)*m/(xmax-xmin));
-        int nmin = static_cast<int>((collider->ymin() - ymin)*n/(ymax-ymin));
-        int mmax = static_cast<int>(std::ceil((collider->xmax() - xmin)*m/(xmax-xmin)));
-        int nmax = static_cast<int>(std::ceil((collider->ymax() - ymin)*n/(ymax-ymin)));
+        const int mmin = static_cast<int>((collider->xmin() - xmin)*m/(xmax-xmin));
+        const int nmin = static_cast<int>((collider->ymin() - ymin)*n/(ymax-ymin));
+        const int mmax = static_cast<int>(std::ceil((collider->xmax() - xmin)*m/(xmax-xmin)));
+        const int nmax = static_cast<int>(std::ceil((collider->ymax() - ymin)*n/(ymax-ymin)));
 
         // Store each cell covered by particle bounding box
         for (int i = mmin; i < mmax+1; i++) {
@@ -82,7 +82,7 @@ std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector
     
     for (auto& group : partsGrouped) {
         std::vector<bool> mask(group.size());
-        fill(mask.begin(), mask.begin() + 2, true);
+        std::fill(mask.begin(), mask.begin() + 2, true);
         do {
             std::vector<Collider*> pairVec;
             for (int i=0; i<mask.size(); i++) {
@@ -90,14 +90,14 @@ std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector
                     pairVec.push_back(group[i]);
                 }
             } 
-            sort(pairVec.begin(), pairVec.end(), [] (const auto& a, const auto& b) { return a->id < b->id; });
+            std::sort(pairVec.begin(), pairVec.end(), [] (const auto& a, const auto& b) { return a->id < b->id; });
             std::pair<Collider*, Collider*> pair(pairVec[0], pairVec[1]);
             partsPaired.push_back(pair);
         } while (std::next_permutation(mask.begin(), mask.end()));
     }
 
     // Remove duplicates
-    sort(partsPaired.begin(), partsPaired.end(), 
+    std::sort(partsPaired.begin(), partsPaired.end(),
         [] (const auto& a, const auto& b) { 
             if (a.first->id != b.first->id) {
                 return a.first->id < b.first->id;
@@ -106,23 +106,22 @@ std::vector<std::pair<Collider*, Collider*>> Collision::USGCollision(std::vector
         }
     );
     
-    auto last = std::unique(partsPaired.begin(), partsPaired.end());
+    const auto last = std::unique(partsPaired.begin(), partsPaired.end());
     partsPaired.erase(last, partsPaired.end());
 
     return partsPaired;
 }
 
-
-std::vector<CollisionResult> Collision::circCollision(std::vector<std::pair<PartCollider*, PartCollider*>>& pairs) const {
+std::vector<CollisionResult> Collision::circCollision(const std::vector<std::pair<PartCollider*, PartCollider*>>& pairs) const {
     std::vector<CollisionResult> result;
 
     for (auto& pair : pairs) {
-        double d = sqrt(pow(pair.first->pos.x - pair.second->pos.x, 2) + pow(pair.first->pos.y - pair.second->pos.y, 2));
+        const double d = sqrt(pow(pair.first->pos.x - pair.second->pos.x, 2) + pow(pair.first->pos.y - pair.second->pos.y, 2));
 
-        if (d < pair.first->owner().r() + pair.second->owner()->r()) {
-            Vec2 collisionPoint = (pair.second->pos - pair.first->pos)/2 + pair.first->pos;
-            double depth = pair.first->r() + pair.second->r() - d;
-            Vec2 sepDir = (pair.second->pos - pair.first->pos).unit();
+        if (d < pair.first->r + pair.second->r) {
+            const Vec2 collisionPoint = (pair.second->pos - pair.first->pos)/2 + pair.first->pos;
+            const double depth = pair.first->r + pair.second->r - d;
+            const Vec2 sepDir = (pair.second->pos - pair.first->pos).unit();
 
             result.push_back(CollisionResult(pair, true, collisionPoint, sepDir, depth));
         }
@@ -131,6 +130,61 @@ std::vector<CollisionResult> Collision::circCollision(std::vector<std::pair<Part
     return result;
 }
 
+std::vector<CollisionResult> Collision::SATCollision(const std::vector<std::pair<PolygonCollider*, PolygonCollider*>>& pairs) const {
+    std::vector<CollisionResult> result;
+    constexpr auto inf = std::numeric_limits<double>::infinity();
+
+    for (const auto& pair : pairs) {
+        const std::vector<Vec2> axes1 = pair.first->edgeNormals();
+        const std::vector<Vec2> axes2 = pair.second->edgeNormals();
+
+        std::vector<Vec2> axes = axes1;
+        axes.insert(axes.end(), axes2.begin(), axes2.end());
+
+        double dmin = inf; // Minimum penetration distance
+        Vec2 sepDir = Vec2(inf, inf);
+
+        for (const auto& axis : axes) {
+            // Projection intervals
+            double amin = inf, amax = -inf;
+            double bmin = inf, bmax = -inf;
+
+            for (const auto& vert : pair.first->worldVerts()) {
+                const double p = vert.dot(axis);
+                if (p < amin) {
+                    amin = p;
+                }
+                if (p > amax) {
+                    amax = p;
+                }
+            }
+
+            for (const auto& vert : pair.second->worldVerts()) {
+                const double p = vert.dot(axis);
+                if (p < bmin) {
+                    bmin = p;
+                }
+                if (p > bmax) {
+                    bmax = p;
+                }
+            }
+
+            const double d = std::min(amax, bmax) - std::max(amin, bmin);
+            if (d < dmin) {
+                dmin = d;
+                sepDir = axis;
+            }
+        }
+
+        // Colliding if dmin >= 0
+        // TODO: Placeholder for collisionpoint, potentially not needed
+        if (dmin >= 0) {
+            result.push_back(CollisionResult(pair, true, Vec2(0,0), sepDir, dmin));
+        }
+    }
+
+    return result;
+}
 
 void Collision::updateMembers(std::vector<CollisionResult>& collisions) {
 

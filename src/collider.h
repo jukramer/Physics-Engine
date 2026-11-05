@@ -19,18 +19,6 @@ class Body;
 class RigidBody;
 class Part;
 
-
-struct CollisionResult {
-    std::pair<Collider*, Collider*> pair;
-    bool colliding;
-    Vec2 collisionPoint;
-    Vec2 sepDir;
-    double depth;
-
-    CollisionResult(std::pair<Collider*, Collider*>& pair, bool colliding = false, Vec2 collisionPoint = Vec2(0,0), Vec2 sepDir = Vec2(0,0), double depth = 0) : pair(pair), colliding(colliding), collisionPoint(collisionPoint), sepDir(sepDir), depth(depth) {}
-};
-
-
 // COLLIDERS
 class Collider {
     public:
@@ -90,6 +78,17 @@ class PolygonCollider : public Collider {
         double ymax() const override { return std::max_element(verts_.begin(), verts_.end(), [] (const auto& a, const auto& b) { return a.y < b.y; })->y; }
         std::vector<Vec2> verts() const { return verts_; }
 
+        std::vector<Vec2> edgeNormals() const {
+            std::vector<Vec2> result;
+
+            for (int i = 0; i < verts_.size(); i++) {
+                const Vec2 edge = verts_[(i+1) % verts_.size()] - verts_[i];
+                result.push_back(edge.normal().unit());
+            }
+
+            return result;
+        }
+
         Body* owner() const override { return owner_; }
         void setOwner(RigidBody* owner) { owner_ = owner; }
 
@@ -112,8 +111,8 @@ class PolygonCollider : public Collider {
 
         Vec2 calcCentroid(vecVec2& verts) const { return std::accumulate(verts.begin(), verts.end(), Vec2(0,0)) / verts.size(); }
 
-        vecVec2 initVerts(vecVec2& verts) {
-            Vec2 centroid = calcCentroid(verts);
+        vecVec2 initVerts(vecVec2& verts) const {
+            const Vec2 centroid = calcCentroid(verts);
             for (auto& vert : verts) {
                 vert -= centroid;
             }
@@ -121,6 +120,8 @@ class PolygonCollider : public Collider {
             return verts;
         }
 };
+
+
 
 
 
