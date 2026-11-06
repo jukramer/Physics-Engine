@@ -99,6 +99,7 @@ class PolygonCollider : public Collider {
             result.reserve(verts_.size());
 
             for (auto& vert : result) {
+                vert = vert.rotate(owner_->theta);
                 vert += pos;
             }
 
@@ -112,9 +113,24 @@ class PolygonCollider : public Collider {
         Vec2 calcCentroid(vecVec2& verts) const { return std::accumulate(verts.begin(), verts.end(), Vec2(0,0)) / verts.size(); }
 
         vecVec2 initVerts(vecVec2& verts) const {
+            std::vector<double> thetas;
+
+            // Normalize by centroid
             const Vec2 centroid = calcCentroid(verts);
             for (auto& vert : verts) {
                 vert -= centroid;
+                double theta = atan2(vert.y, vert.x);
+                thetas.push_back(theta);
+            }
+
+            // Sort vertices in CCW order
+            vecVec2 result;
+            std::vector<size_t> indices;
+            std::iota(indices.begin(), indices.end(), 0.0);
+            std::sort(indices.begin(), indices.end(), [&thetas](const size_t& a, const size_t& b) { return thetas[a] < thetas[b]; });
+
+            for (int i = 0; i < indices.size(); i++) {
+                result.push_back(verts[indices[i]]);
             }
 
             return verts;

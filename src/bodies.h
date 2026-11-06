@@ -53,7 +53,7 @@ class Part : public Body {
 
 class RigidBody : public Body {
     public:
-        RigidBody(const double mass, const Vec2& pos, const Vec2& vel, const Vec2& acc, const int id) : Body(pos, vel, acc, BodyType::RigidBody, id), mass_(mass), invMass_(1/mass) {}
+        RigidBody(const double mass, const Vec2& pos, const Vec2& vel, const Vec2& acc, const double theta, const double omega, const double alpha, const int id) : Body(pos, vel, acc, BodyType::RigidBody, id), theta(theta), omega(omega), alpha(alpha), mass_(mass), invMass_(1/mass) {}
 
         double mass() const { return mass_; }
         double invMass() const { return invMass_; }
@@ -62,8 +62,13 @@ class RigidBody : public Body {
         void addCollider(std::unique_ptr<Collider> collider) { colliders_.push_back(std::move(collider)); }
         void printInfo() const override;
 
+        double theta;
+        double omega;
+        double alpha;
+
     private:
         double mass_;
         double invMass_;
+        double MOI_;
         std::vector<std::unique_ptr<Collider>> colliders_;
 };

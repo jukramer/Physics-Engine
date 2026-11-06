@@ -123,7 +123,7 @@ std::vector<CollisionResult> Collision::circCollision(const std::vector<std::pai
             const double depth = pair.first->r + pair.second->r - d;
             const Vec2 sepDir = (pair.second->pos - pair.first->pos).unit();
 
-            result.push_back(CollisionResult(pair, true, collisionPoint, sepDir, depth));
+            result.push_back(CollisionResult(pair, true, std::vector<Vec2>{collisionPoint}, sepDir, depth));
         }
     }
 
@@ -132,7 +132,7 @@ std::vector<CollisionResult> Collision::circCollision(const std::vector<std::pai
 
 std::vector<CollisionResult> Collision::SATCollision(const std::vector<std::pair<PolygonCollider*, PolygonCollider*>>& pairs) const {
     std::vector<CollisionResult> result;
-    constexpr auto inf = std::numeric_limits<double>::infinity();
+    // constexpr auto inf = std::numeric_limits<double>::infinity();
 
     for (const auto& pair : pairs) {
         const std::vector<Vec2> axes1 = pair.first->edgeNormals();
@@ -179,11 +179,89 @@ std::vector<CollisionResult> Collision::SATCollision(const std::vector<std::pair
         // Colliding if dmin >= 0
         // TODO: Placeholder for collisionpoint, potentially not needed
         if (dmin >= 0) {
-            result.push_back(CollisionResult(pair, true, Vec2(0,0), sepDir, dmin));
+            result.push_back(CollisionResult(pair, true, std::vector<Vec2>{Vec2(0,0)}, sepDir, dmin));
         }
     }
 
     return result;
+}
+
+std::vector<CollisionResult> Collision::findContactManifolds(std::vector<CollisionResult>& results) const {
+    auto resultsCopy = results;
+    for (auto& result : resultsCopy) {
+        if (!(dynamic_cast<PolygonCollider*>(result.pair.first) && dynamic_cast<PolygonCollider*>(result.pair.second))) {
+            throw std::logic_error("Function can be used only for type PolygonCollider.");
+        }
+
+        auto first = dynamic_cast<PolygonCollider*>(result.pair.first);
+        auto second = dynamic_cast<PolygonCollider*>(result.pair.second);
+
+        // Align collision normal with A->B
+        Vec2 dirAB = second->pos - first->pos;
+        Vec2 collisionNormal = result.sepDir.normal();
+
+        if (collisionNormal.dot(dirAB) < 0) {
+            collisionNormal = -collisionNormal;
+        }
+
+        // Find ref and incident edges
+        auto firstWorldVerts = first->verts();
+        auto secondWorldVerts = second->verts();
+        Vec2 v1, v2; // Reference edge endpoints
+        Vec2 u1(0, 0), u2(0, 0); // Incident edge endpoints
+        Vec2 refNormal = -collisionNormal; // init values for finding argmax/argmin(nr/nc.n)
+        Vec2 incNormal = collisionNormal;
+
+        // Ref
+        for (int i = 0; i < firstWorldVerts.size(); i++) {
+            const Vec2 edge = firstWorldVerts[(i+1) % firstWorldVerts.size()] - firstWorldVerts[i];
+            if (edge.normal().dot(collisionNormal) >= refNormal.dot(collisionNormal)) {
+                refNormal = edge.normal();
+                v1 = firstWorldVerts[i];
+                v2 = firstWorldVerts[(i+1) % firstWorldVerts.size()];
+            }
+        }
+
+        // Incident
+        for (int i = 0; i < secondWorldVerts.size(); i++) {
+            const Vec2 edge = secondWorldVerts[(i+1) % secondWorldVerts.size()] - secondWorldVerts[i];
+            if (edge.normal().dot(collisionNormal) <= incNormal.dot(collisionNormal)) {
+                incNormal = edge.normal();
+                u1 = secondWorldVerts[i];
+                u2 = secondWorldVerts[(i+1) % secondWorldVerts.size()];
+            }
+        }
+
+        // Clip incident edge
+        // TODO: revisit
+        Vec2 t = (v2-v1)/(v2-v1).norm(); // ref edge unit tangent
+        double lambda1 = (v1-u1).dot(t)/(u2-u1).dot(t);
+        double lambda2 = (v2-u1).dot(-t)/(u2-u1).dot(-t);
+
+        double s1 = (u1 - v1).dot(t);
+        double s2 = (u2 - v2).dot(-t);
+
+        if (s1 < 0) {
+            u1 = u1 + lambda1*(u2-u1);
+        }
+        if (s2 < 0) {
+            u2 = u2 + lambda2*(u2-u1);
+        }
+
+        // Separation
+        double sep1 = (u1 - v1).dot(t.normal());
+        double sep2 = (u2 - v2).dot(t.normal());
+
+        if (sep1 <= 0) {
+            result.collisionPoints.push_back(u1);
+        }
+
+        if (sep2 <= 0) {
+            result.collisionPoints.push_back(u2);
+        }
+    }
+
+    return resultsCopy;
 }
 
 void Collision::updateMembers(std::vector<CollisionResult>& collisions) {

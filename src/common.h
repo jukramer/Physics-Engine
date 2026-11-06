@@ -11,14 +11,13 @@ namespace Physics {
 
 struct Vec2 {
     public: 
-        double x;
-        double y;
-
         Vec2(const double x, const double y) : x(x), y(y) {}
+        Vec2() : x(0), y(0) {}
 
-        double norm() const { return std::sqrt(x*x + y*y); }
-        Vec2 normal() const { return Vec2(-y, x); }
-        Vec2 reflect(const Vec2& other) const;
+        Vec2 normal() const {
+            // Always returns right hand normal
+            return Vec2(y, -x);
+        }
 
         Vec2 unit() const { 
             const double mag = norm();
@@ -28,8 +27,13 @@ struct Vec2 {
             }
 
             return Vec2(x/mag, y/mag);
-        }   
+        }
 
+        // Angle in radians, CCW+
+        Vec2 rotate(const double angle) const { return Vec2(x*std::cos(angle) - y*std::sin(angle), x*std::sin(angle) + y*std::cos(angle)); }
+
+        Vec2 reflect(const Vec2& other) const;
+        double norm() const { return std::sqrt(x*x + y*y); }
         double dot(const Vec2& other) const { return x*other.x + y*other.y; }
 
         // Vec-vec operators
@@ -51,6 +55,9 @@ struct Vec2 {
 
         // Unary operators
         Vec2 operator-() const { return Vec2(-x, -y); }
+
+        double x;
+        double y;
 };
 
 // Additional vector operators
